@@ -1,4 +1,4 @@
-const firebaseConfig = {
+window.FB_CFG = {
   apiKey: "AIzaSyBH9psFFOvjSOBxp5n_8sBL15C0Z4Iyvso",
   authDomain: "split-spend-new.firebaseapp.com",
   projectId: "split-spend-new",
