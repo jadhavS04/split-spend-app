@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Split Spend</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+:root{--bg:#f5f6fa;--card:#fff;--tx:#1d2433;--mu:#6b7385;--ac:#2f6df6;--gr:#1a9b5b;--rd:#d6453d;--bd:#e3e6ee}
+@media (prefers-color-scheme:dark){:root{--bg:#12151c;--card:#1c212b;--tx:#eef0f5;--mu:#98a0b3;--ac:#6b9bff;--gr:#43c985;--rd:#ff7a72;--bd:#2c3340}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,sans-serif;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+main{max-width:520px;margin:0 auto;padding:14px}h1{font-size:21px;margin:4px 0 10px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:12px;margin-bottom:10px}
+.row{display:flex;gap:8px;margin-top:8px;align-items:center}.sp{justify-content:space-between}
+input,select{flex:1;min-width:0;width:100%;padding:11px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--tx);font-size:16px;margin-top:6px}
+button{border:0;border-radius:10px;padding:11px 13px;font-size:15px;font-weight:600;background:var(--ac);color:#fff}
+button.g{background:transparent;color:var(--mu);padding:6px;font-weight:500}.tabs button{flex:1;background:var(--card);color:var(--tx);border:1px solid var(--bd)}.tabs button.on{background:var(--ac);color:#fff}
+.mu{color:var(--mu);font-size:13px}.pos{color:var(--gr)}.neg{color:var(--rd)}.v{text-decoration:line-through;opacity:.6}
+.big{font-size:22px;font-weight:700}.pill{background:var(--bg);border-radius:8px;padding:2px 8px;font-size:13px}
+#toast{position:fixed;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top,0px));background:var(--tx);color:var(--bg);padding:10px 12px;border-radius:12px;display:none;z-index:9}
+</style></head><body><div id="toast"></div><main id="app"></main>
+<script src="firebase-config.js"></script>
+<script src="lib/firebase-app-compat.js"></script>
+<script src="lib/firebase-auth-compat.js"></script>
+<script src="lib/firebase-firestore-compat.js"></script>
+<script>
+var K="ss.me.v2",ME=null,G=null,M=[],X=[],L=[],tab="sum",editId=null,db,uid,unsub=[],cap=window.Capacitor||{},PR=cap.Plugins&&cap.Plugins.Preferences,LN=cap.Plugins&&cap.Plugins.LocalNotifications;
+var $=function(i){return document.getElementById(i)};
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function f(n){return "₹"+(Math.round(n*100)/100).toLocaleString("en-IN",{maximumFractionDigits:2})}
+function dt(t){return new Date(t).toLocaleString("en-IN",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}
+function toast(t){var e=$("toast");e.textContent=t;e.style.display="block";setTimeout(function(){e.style.display="none"},4000)}
+async function kget(){try{if(PR){var r=await PR.get({key:K});if(r&&r.value)return r.value}}catch(e){}try{return localStorage.getItem(K)}catch(e){return null}}
+function kset(v){try{localStorage.setItem(K,v)}catch(e){}try{if(PR)PR.set({key:K,value:v})}catch(e){}}
+function notify(t,b){toast(t+": "+b);try{if(LN)LN.schedule({notifications:[{id:Math.floor(Math.random()*2e9),title:t,body:b}]})}catch(e){}}
+function code(){var a="ABCDEFGHJKMNPQRSTUVWXYZ23456789",s="";for(var i=0;i<10;i++)s+=a[Math.floor(Math.random()*a.length)];return s}
+function ref(p){return db.doc("groups/"+G+(p?"/"+p:""))}
+function nid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+function logE(b,text){b.set(ref("log/"+nid()),{at:Date.now(),ts:firebase.firestore.FieldValue.serverTimestamp(),by:ME.id,byName:ME.name,uid:uid,text:text})}
+async function start(){
+  var c=window.FB_CFG;
+  if(!c||c.apiKey==="PASTE_HERE"){$("app").innerHTML='<div class="card"><b>Setup needed</b><p>Open <code>www/firebase-config.js</code> and paste your Firebase settings, then rebuild the APK.</p></div>';return}
+  firebase.initializeApp(c);db=firebase.firestore();
+  try{await db.enablePersistence({synchronizeTabs:false})}catch(e){}
+  try{var cr=await firebase.auth().signInAnonymously();uid=cr.user.uid}catch(e){$("app").innerHTML='<div class="card neg">Could not sign in: '+esc(e.message)+'<br>Check internet and that Anonymous sign-in is enabled.</div>';return}
+  try{if(LN)LN.requestPermissions()}catch(e){}
+  var r=await kget();if(r){try{ME=JSON.parse(r)}catch(e){}}
+  if(ME&&ME.code){G=ME.code;listen()}else home()}
+function home(msg){$("app").innerHTML='<h1>Split Spend</h1><div class="card"><b>Create a new group</b><input id="gn" placeholder="Group name (e.g. Goa Trip)"><input id="mn" placeholder="Your name"><div class="row"><button onclick="create()">Create group</button></div></div><div class="card"><b>Join with group code</b><input id="jc" placeholder="Group code" style="text-transform:uppercase"><div class="row"><button onclick="join()">Join</button></div></div><p class="neg">'+esc(msg||"")+'</p>'}
+async function create(){var g=$("gn").value.trim(),n=$("mn").value.trim();if(!g||!n)return home("Enter group name and your name");
+  G=code();var id=nid();ME={code:G,id:id,name:n};var b=db.batch();
+  b.set(ref(),{name:g,at:Date.now(),by:n,uid:uid});b.set(ref("members/"+id),{name:n,at:Date.now(),uid:uid});logE(b,n+" created group \u201c"+g+"\u201d");
+  try{await b.commit()}catch(e){return home("Failed: "+e.message)}kset(JSON.stringify(ME));listen()}
+async function join(){var c=$("jc").value.trim().toUpperCase();if(!c)return;G=c;
+  try{var d=await ref().get();if(!d.exists){G=null;return home("Group not found")}var m=await ref().collection("members").get()}catch(e){G=null;return home("Failed: "+e.message)}
+  var h='<h1>Who are you?</h1><div class="card">';m.forEach(function(x){if(x.data().removed)return;h+='<div class="row"><button style="flex:1" onclick="me(\''+x.id+'\',\''+esc(x.data().name).replace(/'/g,"")+'\')">I am '+esc(x.data().name)+'</button></div>'});
+  $("app").innerHTML=h+'</div><div class="card"><b>New here?</b><input id="mn" placeholder="Your name"><div class="row"><button onclick="joinNew()">Join as new person</button></div></div>'}
+function me(id,n){ME={code:G,id:id,name:n};kset(JSON.stringify(ME));listen()}
+async function joinNew(){var n=$("mn").value.trim();if(!n)return;var id=nid();ME={code:G,id:id,name:n};var b=db.batch();
+  b.set(ref("members/"+id),{name:n,at:Date.now(),uid:uid});logE(b,n+" joined the group");await b.commit();kset(JSON.stringify(ME));listen()}
+function listen(){unsub.forEach(function(u){u()});unsub=[];var first=true;
+  unsub.push(ref().onSnapshot(function(d){G=ME.code;window.GN=(d.data()||{}).name||"";draw()}));
+  unsub.push(ref().collection("members").orderBy("at").onSnapshot(function(s){M=s.docs.map(function(d){return Object.assign({id:d.id},d.data())});draw()}));
+  unsub.push(ref().collection("expenses").orderBy("at","desc").onSnapshot(function(s){X=s.docs.map(function(d){return Object.assign({id:d.id},d.data())});draw()}));
+  unsub.push(ref().collection("log").orderBy("at","desc").limit(300).onSnapshot(function(s){
+    if(!first)s.docChanges().forEach(function(c){var d=c.doc.data();if(c.type==="added"&&!c.doc.metadata.hasPendingWrites&&d.by!==ME.id)notify(d.byName,d.text)});
+    first=false;L=s.docs.map(function(d){return d.data()});draw()}))}
+function act(){return M.filter(function(m){return!m.removed})}
+function rem(){var R=M.filter(function(m){return m.removed});if(!R.length)return'';return '<div class="card"><b>Removed people</b>'+R.map(function(m){return '<div class="row sp"><div><span class="v">'+esc(m.name)+'</span><div class="mu">Removed by '+esc(m.removedBy)+': '+esc(m.removedReason)+'</div></div><button class="g" onclick="addBack(\''+m.id+'\')">Add back</button></div>'}).join('')+'</div>'}
+function calc(){var A=act(),a=X.filter(function(x){return!x.void}),t=0,p={};A.forEach(function(m){p[m.id]=0});a.forEach(function(x){t+=x.amount;if(x.payer in p)p[x.payer]+=x.amount});var sh=A.length?t/A.length:0;return{t:t,sh:sh,p:p,a:a}}
+function settle(c){var d=[],r=[];act().forEach(function(m){var b=Math.round((c.p[m.id]-c.sh)*100);if(b<-0)d.push({n:m.name,v:-b});else if(b>0)r.push({n:m.name,v:b})});var o=[],i=0,j=0;d=d.filter(function(x){return x.v>0});
+  while(i<d.length&&j<r.length){var m=Math.min(d[i].v,r[j].v);o.push(d[i].n+" pays "+r[j].n+" "+f(m/100));d[i].v-=m;r[j].v-=m;if(!d[i].v)i++;if(!r[j].v)j++}return o}
+function nm(id){var m=M.find(function(x){return x.id===id});return m?m.name:"?"}
+function draw(){if(!ME||!ME.code||!G)return;var mm=M.find(function(x){return x.id===ME.id});if(mm&&mm.removed){$("app").innerHTML='<div class="card neg">You were removed from this group by '+esc(mm.removedBy)+'.</div><button onclick="leave()">Switch group</button>';return}var c=calc(),h='<div class="row sp"><h1>'+esc(window.GN||"Group")+'</h1><button class="g" onclick="leave()">Switch</button></div><div class="mu">Code: <b>'+esc(G)+'</b> \u00b7 You: <b>'+esc(ME.name)+'</b> <button class="g" onclick="shareC()">Share code</button></div>'
+  +'<div class="row tabs" style="margin-bottom:10px">'+[["sum","Summary"],["bills","Bills"],["log","Activity"]].map(function(t){return'<button class="'+(tab===t[0]?"on":"")+'" onclick="tab=\''+t[0]+'\';draw()">'+t[1]+'</button>'}).join("")+'</div>';
+  if(tab==="sum"){h+='<div class="card"><div class="mu">Total spend</div><div class="big">'+f(c.t)+'</div><div class="mu">Each of '+act().length+' pays <b>'+f(c.sh)+'</b></div></div>';
+    act().forEach(function(m){var b=c.p[m.id]-c.sh;h+='<div class="card row sp"><div><b>'+esc(m.name)+'</b><div class="mu">Paid '+f(c.p[m.id])+'</div>'+(m.id===ME.id?"":'<button class="g" onclick="remM(\''+m.id+'\')">Remove</button>')+'</div><b class="'+(b>=0?"pos":"neg")+'">'+(Math.abs(b)<.005?"Settled":b>0?"Gets "+f(b):"Owes "+f(-b))+'</b></div>'});
+    var s=settle(c);h+='<div class="card"><b>Who pays whom</b>'+(s.length?s.map(function(x){return'<div>'+esc(x)+'</div>'}).join(""):'<div class="mu">All settled</div>')+'</div>'
+     +rem()+'<div class="card"><b>Add person</b><div class="row"><input id="np" placeholder="Name" style="margin:0"><button onclick="addM()">Add</button></div></div><div class="row"><button class="g" onclick="backup()">Copy full backup</button></div>'}
+  if(tab==="bills"){var e=editId?X.find(function(x){return x.id===editId}):null;
+    h+='<div class="card"><b>'+(e?"Edit bill":"Add bill")+'</b><select id="bp">'+act().map(function(m){return'<option value="'+m.id+'"'+((e?e.payer:ME.id)===m.id?" selected":"")+'>Paid by '+esc(m.name)+'</option>'}).join("")+'</select><input id="ba" type="number" inputmode="decimal" placeholder="Amount" value="'+(e?e.amount:"")+'"><input id="bn" placeholder="What for? (note)" value="'+esc(e?e.note:"")+'"><div class="row"><button onclick="saveB()">'+(e?"Save changes":"Add bill")+'</button>'+(e?'<button class="g" onclick="editId=null;draw()">Cancel</button>':"")+'</div></div>';
+    X.forEach(function(x){h+='<div class="card"><div class="row sp"><div class="'+(x.void?"v":"")+'"><b>'+f(x.amount)+'</b> \u00b7 '+esc(x.note||"-")+'<div class="mu">Paid by '+esc(nm(x.payer))+' \u00b7 added by '+esc(x.byName)+' \u00b7 '+dt(x.at)+(x.editedBy?' \u00b7 edited by '+esc(x.editedBy):"")+'</div></div></div>'
+      +(x.void?'<div class="mu neg">Cancelled by '+esc(x.voidBy)+': '+esc(x.voidReason)+'</div><button class="g" onclick="restore(\''+x.id+'\')">Restore</button>':'<div class="row"><button class="g" onclick="editId=\''+x.id+'\';draw()">Edit</button><button class="g" onclick="voidB(\''+x.id+'\')">Cancel bill</button></div>')+'</div>'});if(!X.length)h+='<p class="mu">No bills yet.</p>'}
+  if(tab==="log"){h+='<div class="mu" style="margin-bottom:8px">Permanent record. Entries cannot be edited or deleted.</div>';L.forEach(function(l){h+='<div class="card"><div>'+esc(l.text)+'</div><div class="mu">'+dt(l.at)+'</div></div>'})}
+  var st={};["ba","bn","np"].forEach(function(i){if($(i))st[i]=$(i).value});$("app").innerHTML=h;for(var k in st)if(!$(k).value)$(k).value=st[k]}
+async function addM(){var n=$("np").value.trim();if(!n)return;var b=db.batch(),id=nid();b.set(ref("members/"+id),{name:n,at:Date.now(),uid:uid});logE(b,ME.name+" added person "+n);await b.commit()}
+async function saveB(){var a=Math.round(parseFloat($("ba").value)*100)/100,p=$("bp").value,n=$("bn").value.trim();if(!(a>0))return toast("Enter a valid amount");var b=db.batch();
+  if(editId){var o=X.find(function(x){return x.id===editId});b.update(ref("expenses/"+editId),{amount:a,payer:p,note:n,editedBy:ME.name,editedAt:Date.now()});logE(b,ME.name+" edited bill: "+f(o.amount)+" \u201c"+(o.note||"-")+"\u201d by "+nm(o.payer)+" \u2192 "+f(a)+" \u201c"+(n||"-")+"\u201d by "+nm(p));editId=null}
+  else{var id=nid();b.set(ref("expenses/"+id),{amount:a,payer:p,note:n,at:Date.now(),by:ME.id,byName:ME.name,void:false});logE(b,ME.name+" added bill "+f(a)+" paid by "+nm(p)+(n?" for \u201c"+n+"\u201d":""))}
+  $("ba").value="";$("bn").value="";await b.commit()}
+async function voidB(id){var r=prompt("Reason for cancelling this bill (required):");if(!r||!r.trim())return;var o=X.find(function(x){return x.id===id}),b=db.batch();
+  b.update(ref("expenses/"+id),{void:true,voidBy:ME.name,voidReason:r.trim(),voidAt:Date.now()});logE(b,ME.name+" cancelled bill "+f(o.amount)+" by "+nm(o.payer)+" (reason: "+r.trim()+")");await b.commit()}
+async function restore(id){var o=X.find(function(x){return x.id===id}),b=db.batch(),pm=M.find(function(x){return x.id===o.payer});if(pm&&pm.removed)return alert('Add '+pm.name+' back first.');b.update(ref("expenses/"+id),{void:false,voidBy:null,voidReason:null});logE(b,ME.name+" restored bill "+f(o.amount)+" by "+nm(o.payer));await b.commit()}
+function shareC(){var t="Join my Split Spend group \u201c"+(window.GN||"")+"\u201d. Code: "+G;try{if(navigator.share)return navigator.share({text:t})}catch(e){}try{navigator.clipboard.writeText(t)}catch(e){}toast("Code copied")}
+function backup(){var t=JSON.stringify({group:G,name:window.GN,members:M,expenses:X,log:L},null,1);try{navigator.clipboard.writeText(t)}catch(e){}toast("Backup copied. Paste it into Notes or WhatsApp.")}
+async function remM(id){var m=M.find(function(x){return x.id===id});if(!m||id===ME.id)return;
+if(X.some(function(x){return!x.void&&x.payer===id}))return alert(m.name+" has bills. Cancel those bills first (Bills tab), then remove.");
+var r=prompt("Reason for removing "+m.name+" (required):");if(!r||!r.trim())return;var b=db.batch();
+b.update(ref("members/"+id),{removed:true,removedBy:ME.name,removedReason:r.trim(),removedAt:Date.now()});logE(b,ME.name+" removed person "+m.name+" (reason: "+r.trim()+")");await b.commit()}
+async function addBack(id){var m=M.find(function(x){return x.id===id}),b=db.batch();b.update(ref("members/"+id),{removed:false,removedBy:null,removedReason:null});logE(b,ME.name+" added back person "+m.name);await b.commit()}
+function leave(){if(confirm("Switch group on this phone? Your data stays safe online.")){unsub.forEach(function(u){u()});ME=null;G=null;kset("");home()}}
+start();
+</script></body></html>
