@@ -12,7 +12,6 @@ jobs:
       - run: npm install
       - run: mkdir -p www/lib && cp node_modules/firebase/firebase-app-compat.js node_modules/firebase/firebase-auth-compat.js node_modules/firebase/firebase-firestore-compat.js www/lib/
       - run: npx cap add android
-      - run: if [ -f google-services.json ]; then cp google-services.json android/app/google-services.json; fi
       - run: mkdir -p ~/.android && if [ -f debug.keystore ]; then cp debug.keystore ~/.android/debug.keystore; fi
       - run: npx cap sync android
       - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
