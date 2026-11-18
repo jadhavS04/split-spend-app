@@ -1,5 +1,11 @@
 name: Build APK
-on: [push, workflow_dispatch]
+on:
+  push:
+  workflow_dispatch:
+  release:
+    types: [published]
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -12,10 +18,22 @@ jobs:
       - run: npm install
       - run: mkdir -p www/lib && cp node_modules/firebase/firebase-app-compat.js node_modules/firebase/firebase-auth-compat.js node_modules/firebase/firebase-firestore-compat.js www/lib/
       - run: npx cap add android
+      - name: Set app version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          if [ -n "$TAG" ]; then sed -i "s/versionName \"1.0\"/versionName \"${TAG#v}\"/" android/app/build.gradle; fi
       - run: mkdir -p ~/.android && if [ -f debug.keystore ]; then cp debug.keystore ~/.android/debug.keystore; fi
       - run: npx cap sync android
       - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
+      - run: cp android/app/build/outputs/apk/debug/app-debug.apk split-spend.apk
       - uses: actions/upload-artifact@v4
         with:
           name: split-spend-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: split-spend.apk
+      - name: Attach APK to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" split-spend.apk --clobber --repo "${{ github.repository }}"
