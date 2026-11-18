@@ -20,7 +20,7 @@ button.g{background:transparent;color:var(--mu);padding:6px;font-weight:500}.tab
 <script src="lib/firebase-auth-compat.js"></script>
 <script src="lib/firebase-firestore-compat.js"></script>
 <script>
-var K="ss.me.v2",K2="ss.groups.v3",GL=[],PUSH=false,TOK=null,ME=null,G=null,M=[],X=[],L=[],tab="sum",editId=null,db,uid,unsub=[],cap=window.Capacitor||{},PR=cap.Plugins&&cap.Plugins.Preferences,LN=cap.Plugins&&cap.Plugins.LocalNotifications,PN=cap.Plugins&&cap.Plugins.PushNotifications;
+var K="ss.me.v2",K2="ss.groups.v3",GL=[],ME=null,G=null,M=[],X=[],L=[],tab="sum",editId=null,db,uid,unsub=[],cap=window.Capacitor||{},PR=cap.Plugins&&cap.Plugins.Preferences,LN=cap.Plugins&&cap.Plugins.LocalNotifications;
 var $=function(i){return document.getElementById(i)};
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
 function f(n){return "₹"+(Math.round(n*100)/100).toLocaleString("en-IN",{maximumFractionDigits:2})}
@@ -28,7 +28,7 @@ function dt(t){return new Date(t).toLocaleString("en-IN",{day:"numeric",month:"s
 function toast(t){var e=$("toast");e.textContent=t;e.style.display="block";setTimeout(function(){e.style.display="none"},4000)}
 async function kget(k){try{if(PR){var r=await PR.get({key:k});if(r&&r.value)return r.value}}catch(e){}try{return localStorage.getItem(k)}catch(e){return null}}
 function kset(k,v){try{localStorage.setItem(k,v)}catch(e){}try{if(PR)PR.set({key:k,value:v})}catch(e){}}
-function notify(t,b){toast(t+": "+b);try{if(LN&&!PUSH)LN.schedule({notifications:[{id:Math.floor(Math.random()*2e9),title:t,body:b}]})}catch(e){}}
+function notify(t,b){toast(t+": "+b);try{if(LN)LN.schedule({notifications:[{id:Math.floor(Math.random()*2e9),title:t,body:b}]})}catch(e){}}
 function code(){var a="ABCDEFGHJKMNPQRSTUVWXYZ23456789",s="";for(var i=0;i<10;i++)s+=a[Math.floor(Math.random()*a.length)];return s}
 function ref(p){return db.doc("groups/"+G+(p?"/"+p:""))}
 function nid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
@@ -42,19 +42,14 @@ async function start(){
   try{if(LN)LN.requestPermissions()}catch(e){}
   var r=await kget(K2);if(r){try{GL=JSON.parse(r)||[]}catch(e){}}
   if(!GL.length){var o=await kget(K);if(o){try{var x=JSON.parse(o);if(x&&x.code){GL=[{code:x.code,id:x.id,name:x.name,gname:""}];saveGL()}}catch(e){}}}
-  initPush();
   if(GL.length===1)openG(GL[0].code);else home()}
 function home(msg){var h='<div class="row sp"><h1>Split Spend</h1><button class="g" onclick="home()">\u21bb</button></div>';
 if(GL.length)h+='<div class="card"><b>My groups</b>'+GL.map(function(g){return '<div class="row sp" style="margin-top:10px"><button style="flex:1;text-align:left" onclick="openG(\''+g.code+'\')">'+esc(g.gname||g.code)+'<br><small>as '+esc(g.name)+' \u00b7 '+esc(g.code)+'</small></button><button class="g" onclick="dropG(\''+g.code+'\')">Remove</button></div>'}).join("")+'</div>';
 $("app").innerHTML=h+'<div class="card"><b>Create a new group</b><input id="gn" placeholder="Group name (e.g. Goa Trip)"><input id="mn" placeholder="Your name"><div class="row"><button onclick="create()">Create group</button></div></div><div class="card"><b>Join with group code</b><input id="jc" placeholder="Group code" style="text-transform:uppercase"><div class="row"><button onclick="join()">Join</button></div></div><p class="neg">'+esc(msg||"")+'</p>'}
 function saveGL(){kset(K2,JSON.stringify(GL))}
-function addG(){GL=GL.filter(function(g){return g.code!==ME.code});GL.push({code:ME.code,id:ME.id,name:ME.name,gname:window.GN||""});saveGL();saveTok()}
+function addG(){GL=GL.filter(function(g){return g.code!==ME.code});GL.push({code:ME.code,id:ME.id,name:ME.name,gname:window.GN||""});saveGL()}
 function openG(c){var g=GL.find(function(x){return x.code===c});if(!g)return;ME={code:g.code,id:g.id,name:g.name};G=c;tab="sum";M=[];X=[];L=[];editId=null;window.GN=g.gname||"";listen()}
 function dropG(c){if(confirm("Remove this group from this phone? Its data stays safe online and you can rejoin with the code.")){GL=GL.filter(function(g){return g.code!==c});saveGL();home()}}
-async function initPush(){try{if(!PN)return;var p=await PN.requestPermissions();if(p.receive!=="granted")return;
-PN.addListener("registration",function(t){TOK=t.value;PUSH=true;saveTok()});PN.addListener("registrationError",function(){PUSH=false});
-PN.addListener("pushNotificationReceived",function(n){toast((n.title||"")+": "+(n.body||""))});await PN.register()}catch(e){}}
-function saveTok(){if(!TOK||!db)return;GL.forEach(function(g){db.doc("groups/"+g.code+"/members/"+g.id).update({fcmToken:TOK}).catch(function(){})})}
 function refresh(){if(!ME)return;listen();toast("Refreshed")}
 document.addEventListener("visibilitychange",function(){if(!document.hidden&&ME)listen()});
 window.addEventListener("online",function(){if(ME)listen()});
