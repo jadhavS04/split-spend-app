@@ -20,14 +20,14 @@ button.g{background:transparent;color:var(--mu);padding:6px;font-weight:500}.tab
 <script src="lib/firebase-auth-compat.js"></script>
 <script src="lib/firebase-firestore-compat.js"></script>
 <script>
-var K="ss.me.v2",ME=null,G=null,M=[],X=[],L=[],tab="sum",editId=null,db,uid,unsub=[],cap=window.Capacitor||{},PR=cap.Plugins&&cap.Plugins.Preferences,LN=cap.Plugins&&cap.Plugins.LocalNotifications;
+var K="ss.me.v2",K2="ss.groups.v3",GL=[],ME=null,G=null,M=[],X=[],L=[],tab="sum",editId=null,db,uid,unsub=[],cap=window.Capacitor||{},PR=cap.Plugins&&cap.Plugins.Preferences,LN=cap.Plugins&&cap.Plugins.LocalNotifications;
 var $=function(i){return document.getElementById(i)};
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
 function f(n){return "₹"+(Math.round(n*100)/100).toLocaleString("en-IN",{maximumFractionDigits:2})}
 function dt(t){return new Date(t).toLocaleString("en-IN",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}
 function toast(t){var e=$("toast");e.textContent=t;e.style.display="block";setTimeout(function(){e.style.display="none"},4000)}
-async function kget(){try{if(PR){var r=await PR.get({key:K});if(r&&r.value)return r.value}}catch(e){}try{return localStorage.getItem(K)}catch(e){return null}}
-function kset(v){try{localStorage.setItem(K,v)}catch(e){}try{if(PR)PR.set({key:K,value:v})}catch(e){}}
+async function kget(k){try{if(PR){var r=await PR.get({key:k});if(r&&r.value)return r.value}}catch(e){}try{return localStorage.getItem(k)}catch(e){return null}}
+function kset(k,v){try{localStorage.setItem(k,v)}catch(e){}try{if(PR)PR.set({key:k,value:v})}catch(e){}}
 function notify(t,b){toast(t+": "+b);try{if(LN)LN.schedule({notifications:[{id:Math.floor(Math.random()*2e9),title:t,body:b}]})}catch(e){}}
 function code(){var a="ABCDEFGHJKMNPQRSTUVWXYZ23456789",s="";for(var i=0;i<10;i++)s+=a[Math.floor(Math.random()*a.length)];return s}
 function ref(p){return db.doc("groups/"+G+(p?"/"+p:""))}
@@ -40,39 +40,53 @@ async function start(){
   try{await db.enablePersistence({synchronizeTabs:false})}catch(e){}
   try{var cr=await firebase.auth().signInAnonymously();uid=cr.user.uid}catch(e){$("app").innerHTML='<div class="card neg">Could not sign in: '+esc(e.message)+'<br>Check internet and that Anonymous sign-in is enabled.</div>';return}
   try{if(LN)LN.requestPermissions()}catch(e){}
-  var r=await kget();if(r){try{ME=JSON.parse(r)}catch(e){}}
-  if(ME&&ME.code){G=ME.code;listen()}else home()}
-function home(msg){$("app").innerHTML='<h1>Split Spend</h1><div class="card"><b>Create a new group</b><input id="gn" placeholder="Group name (e.g. Goa Trip)"><input id="mn" placeholder="Your name"><div class="row"><button onclick="create()">Create group</button></div></div><div class="card"><b>Join with group code</b><input id="jc" placeholder="Group code" style="text-transform:uppercase"><div class="row"><button onclick="join()">Join</button></div></div><p class="neg">'+esc(msg||"")+'</p>'}
+  var r=await kget(K2);if(r){try{GL=JSON.parse(r)||[]}catch(e){}}
+  if(!GL.length){var o=await kget(K);if(o){try{var x=JSON.parse(o);if(x&&x.code){GL=[{code:x.code,id:x.id,name:x.name,gname:""}];saveGL()}}catch(e){}}}
+  if(GL.length===1)openG(GL[0].code);else home()}
+function home(msg){var h='<div class="row sp"><h1>Split Spend</h1><button class="g" onclick="home()">\u21bb</button></div>';
+if(GL.length)h+='<div class="card"><b>My groups</b>'+GL.map(function(g){return '<div class="row sp" style="margin-top:10px"><button style="flex:1;text-align:left" onclick="openG(\''+g.code+'\')">'+esc(g.gname||g.code)+'<br><small>as '+esc(g.name)+' \u00b7 '+esc(g.code)+'</small></button><button class="g" onclick="dropG(\''+g.code+'\')">Remove</button></div>'}).join("")+'</div>';
+$("app").innerHTML=h+'<div class="card"><b>Create a new group</b><input id="gn" placeholder="Group name (e.g. Goa Trip)"><input id="mn" placeholder="Your name"><div class="row"><button onclick="create()">Create group</button></div></div><div class="card"><b>Join with group code</b><input id="jc" placeholder="Group code" style="text-transform:uppercase"><div class="row"><button onclick="join()">Join</button></div></div><p class="neg">'+esc(msg||"")+'</p>'}
+function saveGL(){kset(K2,JSON.stringify(GL))}
+function addG(){GL=GL.filter(function(g){return g.code!==ME.code});GL.push({code:ME.code,id:ME.id,name:ME.name,gname:window.GN||""});saveGL()}
+function openG(c){var g=GL.find(function(x){return x.code===c});if(!g)return;ME={code:g.code,id:g.id,name:g.name};G=c;tab="sum";M=[];X=[];L=[];editId=null;window.GN=g.gname||"";listen()}
+function dropG(c){if(confirm("Remove this group from this phone? Its data stays safe online and you can rejoin with the code.")){GL=GL.filter(function(g){return g.code!==c});saveGL();home()}}
+function refresh(){if(!ME)return;listen();toast("Refreshed")}
+document.addEventListener("visibilitychange",function(){if(!document.hidden&&ME)listen()});
+window.addEventListener("online",function(){if(ME)listen()});
+var ty=null;document.addEventListener("touchstart",function(e){ty=window.scrollY===0?e.touches[0].clientY:null},{passive:true});
+document.addEventListener("touchend",function(e){if(ty!==null&&e.changedTouches[0].clientY-ty>110){if(ME)refresh();else home()}ty=null},{passive:true});
 async function create(){var g=$("gn").value.trim(),n=$("mn").value.trim();if(!g||!n)return home("Enter group name and your name");
   G=code();var id=nid();ME={code:G,id:id,name:n};var b=db.batch();
   b.set(ref(),{name:g,at:Date.now(),by:n,uid:uid});b.set(ref("members/"+id),{name:n,at:Date.now(),uid:uid});logE(b,n+" created group \u201c"+g+"\u201d");
-  try{await b.commit()}catch(e){return home("Failed: "+e.message)}kset(JSON.stringify(ME));listen()}
-async function join(){var c=$("jc").value.trim().toUpperCase();if(!c)return;G=c;
+  try{await b.commit()}catch(e){return home("Failed: "+e.message)}addG();listen()}
+async function join(){var c=$("jc").value.trim().toUpperCase();if(!c)return;G=c;if(GL.some(function(g){return g.code===c}))return openG(c);
   try{var d=await ref().get();if(!d.exists){G=null;return home("Group not found")}var m=await ref().collection("members").get()}catch(e){G=null;return home("Failed: "+e.message)}
-  var h='<h1>Who are you?</h1><div class="card">';m.forEach(function(x){h+='<div class="row"><button style="flex:1" onclick="me(\''+x.id+'\',\''+esc(x.data().name).replace(/'/g,"")+'\')">I am '+esc(x.data().name)+'</button></div>'});
+  var h='<h1>Who are you?</h1><div class="card">';m.forEach(function(x){if(x.data().removed)return;h+='<div class="row"><button style="flex:1" onclick="me(\''+x.id+'\',\''+esc(x.data().name).replace(/'/g,"")+'\')">I am '+esc(x.data().name)+'</button></div>'});
   $("app").innerHTML=h+'</div><div class="card"><b>New here?</b><input id="mn" placeholder="Your name"><div class="row"><button onclick="joinNew()">Join as new person</button></div></div>'}
-function me(id,n){ME={code:G,id:id,name:n};kset(JSON.stringify(ME));listen()}
+function me(id,n){ME={code:G,id:id,name:n};addG();listen()}
 async function joinNew(){var n=$("mn").value.trim();if(!n)return;var id=nid();ME={code:G,id:id,name:n};var b=db.batch();
-  b.set(ref("members/"+id),{name:n,at:Date.now(),uid:uid});logE(b,n+" joined the group");await b.commit();kset(JSON.stringify(ME));listen()}
+  b.set(ref("members/"+id),{name:n,at:Date.now(),uid:uid});logE(b,n+" joined the group");await b.commit();addG();listen()}
 function listen(){unsub.forEach(function(u){u()});unsub=[];var first=true;
-  unsub.push(ref().onSnapshot(function(d){G=ME.code;window.GN=(d.data()||{}).name||"";draw()}));
+  unsub.push(ref().onSnapshot(function(d){G=ME.code;var gn=(d.data()||{}).name||"";window.GN=gn;var ge=GL.find(function(x){return x.code===ME.code});if(ge&&ge.gname!==gn){ge.gname=gn;saveGL()}draw()}));
   unsub.push(ref().collection("members").orderBy("at").onSnapshot(function(s){M=s.docs.map(function(d){return Object.assign({id:d.id},d.data())});draw()}));
   unsub.push(ref().collection("expenses").orderBy("at","desc").onSnapshot(function(s){X=s.docs.map(function(d){return Object.assign({id:d.id},d.data())});draw()}));
   unsub.push(ref().collection("log").orderBy("at","desc").limit(300).onSnapshot(function(s){
     if(!first)s.docChanges().forEach(function(c){var d=c.doc.data();if(c.type==="added"&&!c.doc.metadata.hasPendingWrites&&d.by!==ME.id)notify(d.byName,d.text)});
     first=false;L=s.docs.map(function(d){return d.data()});draw()}))}
-function calc(){var a=X.filter(function(x){return!x.void}),t=0,p={};M.forEach(function(m){p[m.id]=0});a.forEach(function(x){t+=x.amount;if(x.payer in p)p[x.payer]+=x.amount});var sh=M.length?t/M.length:0;return{t:t,sh:sh,p:p,a:a}}
-function settle(c){var d=[],r=[];M.forEach(function(m){var b=Math.round((c.p[m.id]-c.sh)*100);if(b<-0)d.push({n:m.name,v:-b});else if(b>0)r.push({n:m.name,v:b})});var o=[],i=0,j=0;d=d.filter(function(x){return x.v>0});
+function act(){return M.filter(function(m){return!m.removed})}
+function rem(){var R=M.filter(function(m){return m.removed});if(!R.length)return'';return '<div class="card"><b>Removed people</b>'+R.map(function(m){return '<div class="row sp"><div><span class="v">'+esc(m.name)+'</span><div class="mu">Removed by '+esc(m.removedBy)+': '+esc(m.removedReason)+'</div></div><button class="g" onclick="addBack(\''+m.id+'\')">Add back</button></div>'}).join('')+'</div>'}
+function calc(){var A=act(),a=X.filter(function(x){return!x.void}),t=0,p={};A.forEach(function(m){p[m.id]=0});a.forEach(function(x){t+=x.amount;if(x.payer in p)p[x.payer]+=x.amount});var sh=A.length?t/A.length:0;return{t:t,sh:sh,p:p,a:a}}
+function settle(c){var d=[],r=[];act().forEach(function(m){var b=Math.round((c.p[m.id]-c.sh)*100);if(b<-0)d.push({n:m.name,v:-b});else if(b>0)r.push({n:m.name,v:b})});var o=[],i=0,j=0;d=d.filter(function(x){return x.v>0});
   while(i<d.length&&j<r.length){var m=Math.min(d[i].v,r[j].v);o.push(d[i].n+" pays "+r[j].n+" "+f(m/100));d[i].v-=m;r[j].v-=m;if(!d[i].v)i++;if(!r[j].v)j++}return o}
 function nm(id){var m=M.find(function(x){return x.id===id});return m?m.name:"?"}
-function draw(){if(!ME||!ME.code||!G)return;var c=calc(),h='<div class="row sp"><h1>'+esc(window.GN||"Group")+'</h1><button class="g" onclick="leave()">Switch</button></div><div class="mu">Code: <b>'+esc(G)+'</b> \u00b7 You: <b>'+esc(ME.name)+'</b> <button class="g" onclick="shareC()">Share code</button></div>'
+function draw(){if(!ME||!ME.code||!G)return;var mm=M.find(function(x){return x.id===ME.id});if(mm&&mm.removed){$("app").innerHTML='<div class="card neg">You were removed from this group by '+esc(mm.removedBy)+'.</div><button onclick="leave()">Switch group</button>';return}var c=calc(),h='<div class="row sp"><h1>'+esc(window.GN||"Group")+'</h1><button class="g" onclick="refresh()">\u21bb Refresh</button><button class="g" onclick="toList()">Groups</button></div><div class="mu">Code: <b>'+esc(G)+'</b> \u00b7 You: <b>'+esc(ME.name)+'</b> <button class="g" onclick="shareC()">Share code</button></div>'
   +'<div class="row tabs" style="margin-bottom:10px">'+[["sum","Summary"],["bills","Bills"],["log","Activity"]].map(function(t){return'<button class="'+(tab===t[0]?"on":"")+'" onclick="tab=\''+t[0]+'\';draw()">'+t[1]+'</button>'}).join("")+'</div>';
-  if(tab==="sum"){h+='<div class="card"><div class="mu">Total spend</div><div class="big">'+f(c.t)+'</div><div class="mu">Each of '+M.length+' pays <b>'+f(c.sh)+'</b></div></div>';
-    M.forEach(function(m){var b=c.p[m.id]-c.sh;h+='<div class="card row sp"><div><b>'+esc(m.name)+'</b><div class="mu">Paid '+f(c.p[m.id])+'</div></div><b class="'+(b>=0?"pos":"neg")+'">'+(Math.abs(b)<.005?"Settled":b>0?"Gets "+f(b):"Owes "+f(-b))+'</b></div>'});
+  if(tab==="sum"){h+='<div class="card"><div class="mu">Total spend</div><div class="big">'+f(c.t)+'</div><div class="mu">Each of '+act().length+' pays <b>'+f(c.sh)+'</b></div></div>';
+    act().forEach(function(m){var b=c.p[m.id]-c.sh;h+='<div class="card row sp"><div><b>'+esc(m.name)+'</b><div class="mu">Paid '+f(c.p[m.id])+'</div>'+(m.id===ME.id?"":'<button class="g" onclick="remM(\''+m.id+'\')">Remove</button>')+'</div><b class="'+(b>=0?"pos":"neg")+'">'+(Math.abs(b)<.005?"Settled":b>0?"Gets "+f(b):"Owes "+f(-b))+'</b></div>'});
     var s=settle(c);h+='<div class="card"><b>Who pays whom</b>'+(s.length?s.map(function(x){return'<div>'+esc(x)+'</div>'}).join(""):'<div class="mu">All settled</div>')+'</div>'
-     +'<div class="card"><b>Add person</b><div class="row"><input id="np" placeholder="Name" style="margin:0"><button onclick="addM()">Add</button></div></div><div class="row"><button class="g" onclick="backup()">Copy full backup</button></div>'}
+     +rem()+'<div class="card"><b>Add person</b><div class="row"><input id="np" placeholder="Name" style="margin:0"><button onclick="addM()">Add</button></div></div><div class="row"><button class="g" onclick="backup()">Copy full backup</button></div>'}
   if(tab==="bills"){var e=editId?X.find(function(x){return x.id===editId}):null;
-    h+='<div class="card"><b>'+(e?"Edit bill":"Add bill")+'</b><select id="bp">'+M.map(function(m){return'<option value="'+m.id+'"'+((e?e.payer:ME.id)===m.id?" selected":"")+'>Paid by '+esc(m.name)+'</option>'}).join("")+'</select><input id="ba" type="number" inputmode="decimal" placeholder="Amount" value="'+(e?e.amount:"")+'"><input id="bn" placeholder="What for? (note)" value="'+esc(e?e.note:"")+'"><div class="row"><button onclick="saveB()">'+(e?"Save changes":"Add bill")+'</button>'+(e?'<button class="g" onclick="editId=null;draw()">Cancel</button>':"")+'</div></div>';
+    h+='<div class="card"><b>'+(e?"Edit bill":"Add bill")+'</b><select id="bp">'+act().map(function(m){return'<option value="'+m.id+'"'+((e?e.payer:ME.id)===m.id?" selected":"")+'>Paid by '+esc(m.name)+'</option>'}).join("")+'</select><input id="ba" type="number" inputmode="decimal" placeholder="Amount" value="'+(e?e.amount:"")+'"><input id="bn" placeholder="What for? (note)" value="'+esc(e?e.note:"")+'"><div class="row"><button onclick="saveB()">'+(e?"Save changes":"Add bill")+'</button>'+(e?'<button class="g" onclick="editId=null;draw()">Cancel</button>':"")+'</div></div>';
     X.forEach(function(x){h+='<div class="card"><div class="row sp"><div class="'+(x.void?"v":"")+'"><b>'+f(x.amount)+'</b> \u00b7 '+esc(x.note||"-")+'<div class="mu">Paid by '+esc(nm(x.payer))+' \u00b7 added by '+esc(x.byName)+' \u00b7 '+dt(x.at)+(x.editedBy?' \u00b7 edited by '+esc(x.editedBy):"")+'</div></div></div>'
       +(x.void?'<div class="mu neg">Cancelled by '+esc(x.voidBy)+': '+esc(x.voidReason)+'</div><button class="g" onclick="restore(\''+x.id+'\')">Restore</button>':'<div class="row"><button class="g" onclick="editId=\''+x.id+'\';draw()">Edit</button><button class="g" onclick="voidB(\''+x.id+'\')">Cancel bill</button></div>')+'</div>'});if(!X.length)h+='<p class="mu">No bills yet.</p>'}
   if(tab==="log"){h+='<div class="mu" style="margin-bottom:8px">Permanent record. Entries cannot be edited or deleted.</div>';L.forEach(function(l){h+='<div class="card"><div>'+esc(l.text)+'</div><div class="mu">'+dt(l.at)+'</div></div>'})}
@@ -84,9 +98,15 @@ async function saveB(){var a=Math.round(parseFloat($("ba").value)*100)/100,p=$("
   $("ba").value="";$("bn").value="";await b.commit()}
 async function voidB(id){var r=prompt("Reason for cancelling this bill (required):");if(!r||!r.trim())return;var o=X.find(function(x){return x.id===id}),b=db.batch();
   b.update(ref("expenses/"+id),{void:true,voidBy:ME.name,voidReason:r.trim(),voidAt:Date.now()});logE(b,ME.name+" cancelled bill "+f(o.amount)+" by "+nm(o.payer)+" (reason: "+r.trim()+")");await b.commit()}
-async function restore(id){var o=X.find(function(x){return x.id===id}),b=db.batch();b.update(ref("expenses/"+id),{void:false,voidBy:null,voidReason:null});logE(b,ME.name+" restored bill "+f(o.amount)+" by "+nm(o.payer));await b.commit()}
+async function restore(id){var o=X.find(function(x){return x.id===id}),b=db.batch(),pm=M.find(function(x){return x.id===o.payer});if(pm&&pm.removed)return alert('Add '+pm.name+' back first.');b.update(ref("expenses/"+id),{void:false,voidBy:null,voidReason:null});logE(b,ME.name+" restored bill "+f(o.amount)+" by "+nm(o.payer));await b.commit()}
 function shareC(){var t="Join my Split Spend group \u201c"+(window.GN||"")+"\u201d. Code: "+G;try{if(navigator.share)return navigator.share({text:t})}catch(e){}try{navigator.clipboard.writeText(t)}catch(e){}toast("Code copied")}
 function backup(){var t=JSON.stringify({group:G,name:window.GN,members:M,expenses:X,log:L},null,1);try{navigator.clipboard.writeText(t)}catch(e){}toast("Backup copied. Paste it into Notes or WhatsApp.")}
-function leave(){if(confirm("Switch group on this phone? Your data stays safe online.")){unsub.forEach(function(u){u()});ME=null;G=null;kset("");home()}}
+async function remM(id){var m=M.find(function(x){return x.id===id});if(!m||id===ME.id)return;
+if(X.some(function(x){return!x.void&&x.payer===id}))return alert(m.name+" has bills. Cancel those bills first (Bills tab), then remove.");
+var r=prompt("Reason for removing "+m.name+" (required):");if(!r||!r.trim())return;var b=db.batch();
+b.update(ref("members/"+id),{removed:true,removedBy:ME.name,removedReason:r.trim(),removedAt:Date.now()});logE(b,ME.name+" removed person "+m.name+" (reason: "+r.trim()+")");await b.commit()}
+async function addBack(id){var m=M.find(function(x){return x.id===id}),b=db.batch();b.update(ref("members/"+id),{removed:false,removedBy:null,removedReason:null});logE(b,ME.name+" added back person "+m.name);await b.commit()}
+function toList(){unsub.forEach(function(u){u()});unsub=[];ME=null;G=null;M=[];X=[];L=[];editId=null;home()}
+function leave(){toList()}
 start();
 </script></body></html>
